@@ -1,22 +1,20 @@
 import os
+import ssl
 import time
-
-import board
-import displayio
-import terminalio
 
 import adafruit_il0373
 import adafruit_imageload
-from adafruit_display_text import label
 import adafruit_max1704x
-
+import adafruit_requests
+import alarm
+import board
+import digitalio
+import displayio
 import fourwire
 import socketpool
-import ssl
-import adafruit_requests
+import terminalio
 import wifi
-import alarm
-import digitalio
+from adafruit_display_text import label
 
 
 def get_forecast(requests, url):
@@ -32,7 +30,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     bat_pct = label.Label(
         terminalio.FONT,
-        text="{:2d}%".format(int(battery_percent)),
+        text=f"{int(battery_percent):2d}%",
         color=0x000000,
     )
     bat_pct.anchor_point = (1.0, 0)
@@ -43,12 +41,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     today_date = label.Label(
         terminalio.FONT,
-        text="{} {} {}, {}".format(
-            DAYS[date.tm_wday].upper(),
-            MONTHS[date.tm_mon - 1].upper(),
-            date.tm_mday,
-            date.tm_year,
-        ),
+        text=f"{DAYS[date.tm_wday].upper()} {MONTHS[date.tm_mon - 1].upper()} {date.tm_mday}, {date.tm_year}",
         color=0x000000,
     )
     today_date.anchor_point = (0, 0)
@@ -71,7 +64,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     today_icon[0] = ICON_MAP.index(data["weather"][0]["icon"][:2])
 
     today_morn_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["morn"]), color=0x000000
+        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["morn"]), color=0x000000,
     )
     today_morn_temp.anchor_point = (0.5, 0)
     today_morn_temp.anchored_position = (118, 59)
@@ -80,7 +73,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
         today_morn_temp.background_color = 0xFF0000
 
     today_day_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["day"]), color=0x000000
+        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["day"]), color=0x000000,
     )
     today_day_temp.anchor_point = (0.5, 0)
     today_day_temp.anchored_position = (149, 59)
@@ -89,7 +82,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
         today_day_temp.background_color = 0xFF0000
 
     today_night_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["night"]), color=0x000000
+        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["night"]), color=0x000000,
     )
     today_night_temp.anchor_point = (0.5, 0)
     today_night_temp.anchored_position = (180, 59)
@@ -98,7 +91,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
         today_night_temp.background_color = 0xFF0000
 
     today_humidity = label.Label(
-        terminalio.FONT, text="{:3d}%".format(data["humidity"]), color=0x000000
+        terminalio.FONT, text="{:3d}%".format(data["humidity"]), color=0x000000,
     )
     today_humidity.anchor_point = (0, 0.5)
     today_humidity.anchored_position = (105, 95)
@@ -107,7 +100,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
         today_humidity.background_color = 0xFF0000
 
     today_wind = label.Label(
-        terminalio.FONT, text="{:3.0f}mph".format(data["wind_speed"]), color=0x000000
+        terminalio.FONT, text="{:3.0f}mph".format(data["wind_speed"]), color=0x000000,
     )
     today_wind.anchor_point = (0, 0.5)
     today_wind.anchored_position = (155, 95)
@@ -117,7 +110,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     today_sunrise = label.Label(
         terminalio.FONT,
-        text="{:2d}:{:02d} AM".format(sunrise.tm_hour, sunrise.tm_min),
+        text=f"{sunrise.tm_hour:2d}:{sunrise.tm_min:02d} AM",
         color=0x000000,
     )
     today_sunrise.anchor_point = (0, 0.5)
@@ -125,7 +118,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     today_sunset = label.Label(
         terminalio.FONT,
-        text="{:2d}:{:02d} PM".format(sunset.tm_hour - 12, sunset.tm_min),
+        text=f"{sunset.tm_hour - 12:2d}:{sunset.tm_min:02d} PM",
         color=0x000000,
     )
     today_sunset.anchor_point = (0, 0.5)
@@ -170,7 +163,7 @@ def make_future_day_banner(x, y, data):
     icon[0] = ICON_MAP.index(data["weather"][0]["icon"][:2])
 
     day_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["day"]), color=0x000000
+        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["day"]), color=0x000000,
     )
     day_temp.anchor_point = (0, 0.5)
     day_temp.anchored_position = (50, 10)
@@ -192,7 +185,7 @@ def make_future_day_banner(x, y, data):
 
 try:
     wifi.radio.connect(
-        os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD")
+        os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD"),
     )
     print("Connected to:", os.getenv("CIRCUITPY_WIFI_SSID"))
 except TypeError:
