@@ -32,7 +32,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     bat_pct = label.Label(
         terminalio.FONT,
-        text="B: {:2d}%".format(int(battery_percent)),
+        text="{:2d}%".format(int(battery_percent)),
         color=0x000000,
     )
     bat_pct.anchor_point = (1.0, 0)
@@ -84,7 +84,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     )
     today_day_temp.anchor_point = (0.5, 0)
     today_day_temp.anchored_position = (149, 59)
-    if int(data["temp"]["day"]) > 90:
+    if int(data["temp"]["day"]) >= 90:
         today_day_temp.color = 0xFFFFFF
         today_day_temp.background_color = 0xFF0000
 
@@ -102,7 +102,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     )
     today_humidity.anchor_point = (0, 0.5)
     today_humidity.anchored_position = (105, 95)
-    if int(data["humidity"]) > 80:
+    if int(data["humidity"]) < 20 or int(data["humidity"]) > 80:
         today_humidity.color = 0xFFFFFF
         today_humidity.background_color = 0xFF0000
 
@@ -175,9 +175,9 @@ def make_future_day_banner(x, y, data):
     day_temp.anchor_point = (0, 0.5)
     day_temp.anchored_position = (50, 10)
     if (
-        int(data["temp"]["day"]) > 90
-        or int(data["temp"]["night"]) < 20
-        or int(data["temp"]["morn"]) < 20
+        int(data["temp"]["day"]) >= 95
+        or int(data["temp"]["night"]) <= 25
+        or int(data["temp"]["morn"]) <= 25
     ):
         day_temp.color = 0xFFFFFF
         day_temp.background_color = 0xFF0000
