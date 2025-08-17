@@ -16,11 +16,50 @@ import terminalio
 import wifi
 from adafruit_display_text import label
 
+BLACK = 0x000000
+WHITE = 0xFFFFFF
+RED = 0xFF0000
+
 
 def get_forecast(requests, url):
     resp = requests.get(url)
     json_data = resp.json()
     return json_data["daily"], json_data["current"]["dt"], json_data["timezone_offset"]
+
+
+def temperature_text(temp: float) -> tuple[str, int, int]:
+    if temp < 30:
+        return "Frze", WHITE, RED
+    elif temp < 50:
+        return "Cold", WHITE, BLACK
+    elif temp < 70:
+        return "Cool", BLACK, WHITE
+    elif temp < 80:
+        return "Mild", BLACK, WHITE
+    elif temp < 90:
+        return "Warm", RED, WHITE
+    else:
+        return "Hot", WHITE, RED
+
+
+def humidity_text(humidity: int) -> tuple[str, int, int]:
+    if humidity < 20:
+        return "Dry", RED, WHITE
+    elif humidity < 60:
+        return "Normal", BLACK, WHITE
+    else:
+        return "Humid", WHITE, RED
+
+
+def wind_text(wind_speed: float) -> tuple[str, int, int]:
+    if wind_speed < 5:
+        return "Calm", BLACK, WHITE
+    elif wind_speed < 15:
+        return "Brzy", BLACK, WHITE
+    elif wind_speed < 30:
+        return "Windy", RED, WHITE
+    else:
+        return "Storm", WHITE, RED
 
 
 def make_today_banner(city, data, tz_offset, battery_percent):
@@ -31,29 +70,29 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     bat_pct = label.Label(
         terminalio.FONT,
         text=f"{int(battery_percent):2d}%",
-        color=0x000000,
+        color=BLACK,
     )
     bat_pct.anchor_point = (1.0, 0)
     bat_pct.anchored_position = (190, 14)
     if battery_percent < 20:
-        bat_pct.color = 0xFFFFFF
-        bat_pct.background_color = 0xFF0000
+        bat_pct.color = WHITE
+        bat_pct.background_color = BLACK
 
     today_date = label.Label(
         terminalio.FONT,
         text=f"{DAYS[date.tm_wday].upper()} {MONTHS[date.tm_mon - 1].upper()} {date.tm_mday}, {date.tm_year}",
-        color=0x000000,
+        color=BLACK,
     )
     today_date.anchor_point = (0, 0)
     today_date.anchored_position = (15, 14)
 
-    city_name = label.Label(terminalio.FONT, text=city, color=0x000000)
+    city_name = label.Label(terminalio.FONT, text=city, color=BLACK)
     city_name.anchor_point = (0, 0)
     city_name.anchored_position = (15, 25)
 
     today_icon = displayio.TileGrid(
         icons_large_bmp,
-        pixel_shader=icons_small_pal,
+        pixel_shader=icons_small_pal,  # type: ignore
         x=10,
         y=40,
         width=1,
@@ -63,55 +102,60 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     )
     today_icon[0] = ICON_MAP.index(data["weather"][0]["icon"][:2])
 
+    (txt, fg, bg) = temperature_text(data["temp"]["morn"])
     today_morn_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["morn"]), color=0x000000,
+        terminalio.FONT,
+        text=txt,
+        color=fg,
+        background_color=bg,
     )
     today_morn_temp.anchor_point = (0.5, 0)
     today_morn_temp.anchored_position = (118, 59)
-    if int(data["temp"]["morn"]) < 30:
-        today_morn_temp.color = 0xFFFFFF
-        today_morn_temp.background_color = 0xFF0000
 
+    (txt, fg, bg) = temperature_text(data["temp"]["day"])
     today_day_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["day"]), color=0x000000,
+        terminalio.FONT,
+        text=txt,
+        color=fg,
+        background_color=bg,
     )
     today_day_temp.anchor_point = (0.5, 0)
     today_day_temp.anchored_position = (149, 59)
-    if int(data["temp"]["day"]) >= 90:
-        today_day_temp.color = 0xFFFFFF
-        today_day_temp.background_color = 0xFF0000
 
+    (txt, fg, bg) = temperature_text(data["temp"]["night"])
     today_night_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["night"]), color=0x000000,
+        terminalio.FONT,
+        text=txt,
+        color=fg,
+        background_color=bg,
     )
     today_night_temp.anchor_point = (0.5, 0)
     today_night_temp.anchored_position = (180, 59)
-    if int(data["temp"]["night"]) < 30:
-        today_night_temp.color = 0xFFFFFF
-        today_night_temp.background_color = 0xFF0000
 
+    (txt, fg, bg) = humidity_text(data["humidity"])
     today_humidity = label.Label(
-        terminalio.FONT, text="{:3d}%".format(data["humidity"]), color=0x000000,
+        terminalio.FONT,
+        text=txt,
+        color=fg,
+        background_color=bg,
     )
     today_humidity.anchor_point = (0, 0.5)
     today_humidity.anchored_position = (105, 95)
-    if int(data["humidity"]) < 20 or int(data["humidity"]) > 80:
-        today_humidity.color = 0xFFFFFF
-        today_humidity.background_color = 0xFF0000
 
+    (txt, fg, bg) = wind_text(data["wind_speed"])
     today_wind = label.Label(
-        terminalio.FONT, text="{:3.0f}mph".format(data["wind_speed"]), color=0x000000,
+        terminalio.FONT,
+        text=txt,
+        color=fg,
+        background_color=bg,
     )
     today_wind.anchor_point = (0, 0.5)
-    today_wind.anchored_position = (155, 95)
-    if int(data["wind_speed"]) > 30:
-        today_wind.color = 0xFFFFFF
-        today_wind.background_color = 0xFF0000
+    today_wind.anchored_position = (160, 95)
 
     today_sunrise = label.Label(
         terminalio.FONT,
         text=f"{sunrise.tm_hour:2d}:{sunrise.tm_min:02d} AM",
-        color=0x000000,
+        color=BLACK,
     )
     today_sunrise.anchor_point = (0, 0.5)
     today_sunrise.anchored_position = (45, 117)
@@ -119,7 +163,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     today_sunset = label.Label(
         terminalio.FONT,
         text=f"{sunset.tm_hour - 12:2d}:{sunset.tm_min:02d} PM",
-        color=0x000000,
+        color=BLACK,
     )
     today_sunset.anchor_point = (0, 0.5)
     today_sunset.anchored_position = (130, 117)
@@ -145,14 +189,14 @@ def make_future_day_banner(x, y, data):
     day_of_week = label.Label(
         terminalio.FONT,
         text=DAYS[time.localtime(data["dt"]).tm_wday][:3].upper(),
-        color=0x000000,
+        color=BLACK,
     )
     day_of_week.anchor_point = (0, 0.5)
     day_of_week.anchored_position = (0, 10)
 
     icon = displayio.TileGrid(
         icons_small_bmp,
-        pixel_shader=icons_small_pal,
+        pixel_shader=icons_small_pal,  # type: ignore
         x=25,
         y=0,
         width=1,
@@ -162,18 +206,15 @@ def make_future_day_banner(x, y, data):
     )
     icon[0] = ICON_MAP.index(data["weather"][0]["icon"][:2])
 
+    (txt, fg, bg) = temperature_text(data["temp"]["day"])
     day_temp = label.Label(
-        terminalio.FONT, text="{:3.0f}F".format(data["temp"]["day"]), color=0x000000,
+        terminalio.FONT,
+        text=txt,
+        color=fg,
+        background_color=bg,
     )
     day_temp.anchor_point = (0, 0.5)
     day_temp.anchored_position = (50, 10)
-    if (
-        int(data["temp"]["day"]) >= 95
-        or int(data["temp"]["night"]) <= 25
-        or int(data["temp"]["morn"]) <= 25
-    ):
-        day_temp.color = 0xFFFFFF
-        day_temp.background_color = 0xFF0000
 
     group = displayio.Group(x=x, y=y)
     group.append(day_of_week)
@@ -185,7 +226,8 @@ def make_future_day_banner(x, y, data):
 
 try:
     wifi.radio.connect(
-        os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD"),
+        os.getenv("CIRCUITPY_WIFI_SSID"),
+        os.getenv("CIRCUITPY_WIFI_PASSWORD"),
     )
     print("Connected to:", os.getenv("CIRCUITPY_WIFI_SSID"))
 except TypeError:
@@ -196,7 +238,7 @@ try:
     url = (
         "https://api.openweathermap.org/data/3.0/onecall"
         + "?lat="
-        + os.getenv("OPEN_WEATHER_LAT")
+        + os.getenv("OPEN_WEATHER_LAT")  # type: ignore
         + "&lon="
         + os.getenv("OPEN_WEATHER_LON")
         + "&units=imperial&exclude=minutely,hourly"
@@ -239,10 +281,10 @@ displayio.release_displays()
 # Define the pins needed for display use
 # This pinout is for a Feather M4 and may be different for other boards
 spi = board.SPI()  # Uses SCK and MOSI
-epd_cs = board.D9
-epd_dc = board.D10
+epd_cs = board.D9  # type: ignore
+epd_dc = board.D10  # type: ignore
 epd_reset = board.D5
-epd_busy = board.D6
+epd_busy = board.D6  # type: ignore
 
 # Create the displayio connection to the display pins
 display_bus = fourwire.FourWire(
@@ -261,7 +303,7 @@ display = adafruit_il0373.IL0373(
     height=128,
     rotation=270,
     busy_pin=epd_busy,
-    highlight_color=0xFF0000,
+    highlight_color=RED,
 )
 
 # Create a display group for our screen objects
@@ -324,10 +366,10 @@ else:
 
 print("Sleeping for", sleep_seconds, "seconds")
 
-time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + sleep_seconds)
+time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + sleep_seconds)  # type: ignore
 
 # Turn off I2C power by setting it to input
-i2c_power = digitalio.DigitalInOut(board.I2C_POWER)
+i2c_power = digitalio.DigitalInOut(board.I2C_POWER)  # type: ignore
 i2c_power.switch_to_input()
 alarm.exit_and_deep_sleep_until_alarms(time_alarm)
 
