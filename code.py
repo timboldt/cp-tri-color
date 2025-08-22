@@ -29,7 +29,7 @@ def get_forecast(requests, url):
 
 def temperature_text(temp: float) -> tuple[str, int, int]:
     if temp < 30:
-        return "Frze", WHITE, RED
+        return " Frz", WHITE, RED
     elif temp < 50:
         return "Cold", WHITE, BLACK
     elif temp < 70:
@@ -37,18 +37,18 @@ def temperature_text(temp: float) -> tuple[str, int, int]:
     elif temp < 80:
         return "Mild", BLACK, WHITE
     elif temp < 90:
-        return "Warm", RED, WHITE
+        return "Warm", WHITE, BLACK
     else:
-        return "Hot", WHITE, RED
+        return " Hot ", WHITE, RED
 
 
 def humidity_text(humidity: int) -> tuple[str, int, int]:
     if humidity < 20:
-        return "Dry", RED, WHITE
+        return "Dry", BLACK, WHITE
     elif humidity < 60:
-        return "Normal", BLACK, WHITE
+        return "Norm", BLACK, WHITE
     else:
-        return "Humid", WHITE, RED
+        return " Hum ", WHITE, RED
 
 
 def wind_text(wind_speed: float) -> tuple[str, int, int]:
@@ -57,7 +57,7 @@ def wind_text(wind_speed: float) -> tuple[str, int, int]:
     elif wind_speed < 15:
         return "Brzy", BLACK, WHITE
     elif wind_speed < 30:
-        return "Windy", RED, WHITE
+        return "Windy", WHITE, BLACK
     else:
         return "Storm", WHITE, RED
 
