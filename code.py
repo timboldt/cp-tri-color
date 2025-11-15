@@ -390,15 +390,15 @@ else:
     recharge_msg.anchored_position = (148, 70)
     g.append(recharge_msg)
 
+# Explicitly disable WiFi to save power during display refresh and deep sleep
+# Unconditionally disable to ensure lowest possible power consumption
+wifi.radio.enabled = False
+
 # Refresh the display to have it actually show the image
 # NOTE: Do not refresh eInk displays sooner than 180 seconds
 display.refresh()
 time.sleep(20)  # Allow time for the display to refresh (reduced from 30s to save power)
 print("refreshed")
-
-# Explicitly disable WiFi to save power during deep sleep
-# Unconditionally disable to ensure lowest possible sleep current
-wifi.radio.enabled = False
 
 local_now = time.localtime(utc_time + local_tz_offset)
 # Target wake time: 6:00 AM local time
