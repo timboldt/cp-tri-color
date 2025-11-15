@@ -48,8 +48,10 @@ def humidity_text(humidity: int, temp: float) -> tuple[str, int, int]:
     elif humidity < 60:
         return "Norm", BLACK, WHITE
     elif temp >= 70:
+        # High humidity and warm temps feel uncomfortable
         return " Hum ", WHITE, RED
     else:
+        # High humidity at cooler temps feels normal
         return "Norm", BLACK, WHITE
 
 
@@ -94,7 +96,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     today_icon = displayio.TileGrid(
         icons_large_bmp,
-        pixel_shader=icons_small_pal,  # type: ignore
+        pixel_shader=icons_large_pal,  # type: ignore
         x=10,
         y=40,
         width=1,
@@ -226,56 +228,51 @@ def make_future_day_banner(x, y, data):
     return group
 
 
-try:
-    wifi.radio.connect(
-        os.getenv("CIRCUITPY_WIFI_SSID"),
-        os.getenv("CIRCUITPY_WIFI_PASSWORD"),
-    )
-    print("Connected to:", os.getenv("CIRCUITPY_WIFI_SSID"))
-except TypeError:
-    print("Could not find WiFi info. Check your settings.toml file!")
-    raise
+# Initialize I2C and battery monitor early to check battery level
+i2c = board.I2C()
+battery_monitor = adafruit_max1704x.MAX17048(i2c)
+battery_percent = battery_monitor.cell_percent
 
-try:
-    url = (
-        "https://api.openweathermap.org/data/3.0/onecall"
-        + "?lat="
-        + os.getenv("OPEN_WEATHER_LAT")  # type: ignore
-        + "&lon="
-        + os.getenv("OPEN_WEATHER_LON")
-        + "&units=imperial&exclude=minutely,hourly"
-        + "&appid="
-        + os.getenv("OPEN_WEATHER_KEY")
-    )
-except TypeError:
-    print("Could not find OpenWeatherMap token. Check your settings.toml file!")
-    raise
+# Only fetch weather data if battery level is sufficient
+# This saves ~20mAh per day when battery is critically low
+if battery_percent > 15:
+    try:
+        wifi.radio.connect(
+            os.getenv("CIRCUITPY_WIFI_SSID"),
+            os.getenv("CIRCUITPY_WIFI_PASSWORD"),
+        )
+        print("Connected to:", os.getenv("CIRCUITPY_WIFI_SSID"))
+    except TypeError:
+        print("Could not find WiFi info. Check your settings.toml file!")
+        raise
 
-pool = socketpool.SocketPool(wifi.radio)
-requests = adafruit_requests.Session(pool, ssl.create_default_context())
+    try:
+        url = (
+            "https://api.openweathermap.org/data/3.0/onecall"
+            + "?lat="
+            + os.getenv("OPEN_WEATHER_LAT")  # type: ignore
+            + "&lon="
+            + os.getenv("OPEN_WEATHER_LON")
+            + "&units=imperial&exclude=minutely,hourly"
+            + "&appid="
+            + os.getenv("OPEN_WEATHER_KEY")
+        )
+    except TypeError:
+        print("Could not find OpenWeatherMap token. Check your settings.toml file!")
+        raise
+
+    pool = socketpool.SocketPool(wifi.radio)
+    requests = adafruit_requests.Session(pool, ssl.create_default_context())
+else:
+    print(f"Battery too low ({battery_percent:.1f}%), skipping WiFi to conserve power")
+    requests = None
 
 BACKGROUND_BMP = "/bmps/weather_bg.bmp"
 ICONS_LARGE_FILE = "/bmps/weather_icons_70px.bmp"
 ICONS_SMALL_FILE = "/bmps/weather_icons_20px.bmp"
 ICON_MAP = ("01", "02", "03", "04", "09", "10", "11", "13", "50")
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-MONTHS = (
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-)
-
-i2c = board.I2C()
-battery_monitor = adafruit_max1704x.MAX17048(board.I2C())
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 # Used to ensure the display is free in CircuitPython
 displayio.release_displays()
@@ -320,34 +317,59 @@ g.append(bg_tg)
 icons_large_bmp, icons_large_pal = adafruit_imageload.load(ICONS_LARGE_FILE)
 icons_small_bmp, icons_small_pal = adafruit_imageload.load(ICONS_SMALL_FILE)
 
-forecast_data, utc_time, local_tz_offset = get_forecast(requests, url)
+# Only fetch weather if WiFi was enabled (battery sufficient)
+if requests is not None:
+    forecast_data, utc_time, local_tz_offset = get_forecast(requests, url)
+else:
+    # Use current time for display when skipping WiFi
+    forecast_data = None
+    utc_time = time.time()
+    local_tz_offset = -8 * 3600  # Default to PST
 
 # Place the display group on the screen
 display.root_group = g
 
-city = "Pleasanton, CA"
-today_banner = make_today_banner(
-    city=city,
-    data=forecast_data[0],
-    tz_offset=local_tz_offset,
-    battery_percent=battery_monitor.cell_percent,
-)
-g.append(today_banner)
+# Only display weather if we fetched data; otherwise show low battery message
+if forecast_data is not None:
+    city = "Pleasanton, CA"
+    today_banner = make_today_banner(
+        city=city,
+        data=forecast_data[0],
+        tz_offset=local_tz_offset,
+        battery_percent=battery_percent,
+    )
+    g.append(today_banner)
 
-future_banners = [
-    make_future_day_banner(x=210, y=18, data=forecast_data[1]),
-    make_future_day_banner(x=210, y=39, data=forecast_data[2]),
-    make_future_day_banner(x=210, y=60, data=forecast_data[3]),
-    make_future_day_banner(x=210, y=81, data=forecast_data[4]),
-    make_future_day_banner(x=210, y=102, data=forecast_data[5]),
-]
-for future_banner in future_banners:
-    g.append(future_banner)
+    future_banners = [
+        make_future_day_banner(x=210, y=18, data=forecast_data[1]),
+        make_future_day_banner(x=210, y=39, data=forecast_data[2]),
+        make_future_day_banner(x=210, y=60, data=forecast_data[3]),
+        make_future_day_banner(x=210, y=81, data=forecast_data[4]),
+        make_future_day_banner(x=210, y=102, data=forecast_data[5]),
+    ]
+    for future_banner in future_banners:
+        g.append(future_banner)
+
+else:
+    # Display low battery message
+    low_battery_msg = label.Label(
+        terminalio.FONT,
+        text=f"Battery Low: {battery_percent:.0f}%",
+        color=WHITE,
+        background_color=RED,
+    )
+    low_battery_msg.anchor_point = (0, 0.5)
+    low_battery_msg.anchored_position = (5, 30)
+    g.append(low_battery_msg)
+
+# Explicitly disable WiFi to save power during display refresh and deep sleep
+# Unconditionally disable to ensure lowest possible power consumption
+wifi.radio.enabled = False
 
 # Refresh the display to have it actually show the image
 # NOTE: Do not refresh eInk displays sooner than 180 seconds
 display.refresh()
-time.sleep(30)  # Allow time for the display to refresh
+time.sleep(20)  # Allow time for the display to refresh (reduced from 30s to save power)
 print("refreshed")
 
 local_now = time.localtime(utc_time + local_tz_offset)
