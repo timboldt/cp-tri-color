@@ -48,8 +48,10 @@ def humidity_text(humidity: int, temp: float) -> tuple[str, int, int]:
     elif humidity < 60:
         return "Norm", BLACK, WHITE
     elif temp >= 70:
+        # High humidity and warm temps feel uncomfortable
         return " Hum ", WHITE, RED
     else:
+        # High humidity at cooler temps feels normal
         return "Norm", BLACK, WHITE
 
 
@@ -94,7 +96,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     today_icon = displayio.TileGrid(
         icons_large_bmp,
-        pixel_shader=icons_small_pal,  # type: ignore
+        pixel_shader=icons_large_pal,  # type: ignore
         x=10,
         y=40,
         width=1,
@@ -270,20 +272,7 @@ ICONS_LARGE_FILE = "/bmps/weather_icons_70px.bmp"
 ICONS_SMALL_FILE = "/bmps/weather_icons_20px.bmp"
 ICON_MAP = ("01", "02", "03", "04", "09", "10", "11", "13", "50")
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-MONTHS = (
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-)
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 # Used to ensure the display is free in CircuitPython
 displayio.release_displays()
@@ -360,35 +349,18 @@ if forecast_data is not None:
     ]
     for future_banner in future_banners:
         g.append(future_banner)
+
 else:
     # Display low battery message
     low_battery_msg = label.Label(
         terminalio.FONT,
-        text=f"Battery Low: {battery_percent:.1f}%",
+        text=f"Battery Low: {battery_percent:.0f}%",
         color=WHITE,
         background_color=RED,
     )
-    low_battery_msg.anchor_point = (0.5, 0.5)
-    low_battery_msg.anchored_position = (148, 30)
+    low_battery_msg.anchor_point = (0, 0.5)
+    low_battery_msg.anchored_position = (5, 30)
     g.append(low_battery_msg)
-
-    power_save_msg = label.Label(
-        terminalio.FONT,
-        text="Power Save Mode",
-        color=BLACK,
-    )
-    power_save_msg.anchor_point = (0.5, 0.5)
-    power_save_msg.anchored_position = (148, 50)
-    g.append(power_save_msg)
-
-    recharge_msg = label.Label(
-        terminalio.FONT,
-        text="Please Recharge",
-        color=BLACK,
-    )
-    recharge_msg.anchor_point = (0.5, 0.5)
-    recharge_msg.anchored_position = (148, 70)
-    g.append(recharge_msg)
 
 # Explicitly disable WiFi to save power during display refresh and deep sleep
 # Unconditionally disable to ensure lowest possible power consumption
