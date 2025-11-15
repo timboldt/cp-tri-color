@@ -42,13 +42,15 @@ def temperature_text(temp: float) -> tuple[str, int, int]:
         return " Hot ", WHITE, RED
 
 
-def humidity_text(humidity: int) -> tuple[str, int, int]:
+def humidity_text(humidity: int, temp: float) -> tuple[str, int, int]:
     if humidity < 20:
         return "Dry", BLACK, WHITE
     elif humidity < 60:
         return "Norm", BLACK, WHITE
-    else:
+    elif temp >= 70:
         return " Hum ", WHITE, RED
+    else:
+        return "Norm", BLACK, WHITE
 
 
 def wind_text(wind_speed: float) -> tuple[str, int, int]:
@@ -132,7 +134,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     today_night_temp.anchor_point = (0.5, 0)
     today_night_temp.anchored_position = (180, 59)
 
-    (txt, fg, bg) = humidity_text(data["humidity"])
+    (txt, fg, bg) = humidity_text(data["humidity"], data["temp"]["day"])
     today_humidity = label.Label(
         terminalio.FONT,
         text=txt,
