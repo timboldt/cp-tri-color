@@ -226,33 +226,44 @@ def make_future_day_banner(x, y, data):
     return group
 
 
-try:
-    wifi.radio.connect(
-        os.getenv("CIRCUITPY_WIFI_SSID"),
-        os.getenv("CIRCUITPY_WIFI_PASSWORD"),
-    )
-    print("Connected to:", os.getenv("CIRCUITPY_WIFI_SSID"))
-except TypeError:
-    print("Could not find WiFi info. Check your settings.toml file!")
-    raise
+# Initialize I2C and battery monitor early to check battery level
+i2c = board.I2C()
+battery_monitor = adafruit_max1704x.MAX17048(i2c)
+battery_percent = battery_monitor.cell_percent
 
-try:
-    url = (
-        "https://api.openweathermap.org/data/3.0/onecall"
-        + "?lat="
-        + os.getenv("OPEN_WEATHER_LAT")  # type: ignore
-        + "&lon="
-        + os.getenv("OPEN_WEATHER_LON")
-        + "&units=imperial&exclude=minutely,hourly"
-        + "&appid="
-        + os.getenv("OPEN_WEATHER_KEY")
-    )
-except TypeError:
-    print("Could not find OpenWeatherMap token. Check your settings.toml file!")
-    raise
+# Only fetch weather data if battery level is sufficient
+# This saves ~20mAh per day when battery is critically low
+if battery_percent > 15:
+    try:
+        wifi.radio.connect(
+            os.getenv("CIRCUITPY_WIFI_SSID"),
+            os.getenv("CIRCUITPY_WIFI_PASSWORD"),
+        )
+        print("Connected to:", os.getenv("CIRCUITPY_WIFI_SSID"))
+    except TypeError:
+        print("Could not find WiFi info. Check your settings.toml file!")
+        raise
 
-pool = socketpool.SocketPool(wifi.radio)
-requests = adafruit_requests.Session(pool, ssl.create_default_context())
+    try:
+        url = (
+            "https://api.openweathermap.org/data/3.0/onecall"
+            + "?lat="
+            + os.getenv("OPEN_WEATHER_LAT")  # type: ignore
+            + "&lon="
+            + os.getenv("OPEN_WEATHER_LON")
+            + "&units=imperial&exclude=minutely,hourly"
+            + "&appid="
+            + os.getenv("OPEN_WEATHER_KEY")
+        )
+    except TypeError:
+        print("Could not find OpenWeatherMap token. Check your settings.toml file!")
+        raise
+
+    pool = socketpool.SocketPool(wifi.radio)
+    requests = adafruit_requests.Session(pool, ssl.create_default_context())
+else:
+    print(f"Battery too low ({battery_percent:.1f}%), skipping WiFi to conserve power")
+    requests = None
 
 BACKGROUND_BMP = "/bmps/weather_bg.bmp"
 ICONS_LARGE_FILE = "/bmps/weather_icons_70px.bmp"
@@ -273,9 +284,6 @@ MONTHS = (
     "November",
     "December",
 )
-
-i2c = board.I2C()
-battery_monitor = adafruit_max1704x.MAX17048(board.I2C())
 
 # Used to ensure the display is free in CircuitPython
 displayio.release_displays()
@@ -320,35 +328,77 @@ g.append(bg_tg)
 icons_large_bmp, icons_large_pal = adafruit_imageload.load(ICONS_LARGE_FILE)
 icons_small_bmp, icons_small_pal = adafruit_imageload.load(ICONS_SMALL_FILE)
 
-forecast_data, utc_time, local_tz_offset = get_forecast(requests, url)
+# Only fetch weather if WiFi was enabled (battery sufficient)
+if requests is not None:
+    forecast_data, utc_time, local_tz_offset = get_forecast(requests, url)
+else:
+    # Use current time for display when skipping WiFi
+    forecast_data = None
+    utc_time = time.time()
+    local_tz_offset = -8 * 3600  # Default to PST
 
 # Place the display group on the screen
 display.root_group = g
 
-city = "Pleasanton, CA"
-today_banner = make_today_banner(
-    city=city,
-    data=forecast_data[0],
-    tz_offset=local_tz_offset,
-    battery_percent=battery_monitor.cell_percent,
-)
-g.append(today_banner)
+# Only display weather if we fetched data; otherwise show low battery message
+if forecast_data is not None:
+    city = "Pleasanton, CA"
+    today_banner = make_today_banner(
+        city=city,
+        data=forecast_data[0],
+        tz_offset=local_tz_offset,
+        battery_percent=battery_percent,
+    )
+    g.append(today_banner)
 
-future_banners = [
-    make_future_day_banner(x=210, y=18, data=forecast_data[1]),
-    make_future_day_banner(x=210, y=39, data=forecast_data[2]),
-    make_future_day_banner(x=210, y=60, data=forecast_data[3]),
-    make_future_day_banner(x=210, y=81, data=forecast_data[4]),
-    make_future_day_banner(x=210, y=102, data=forecast_data[5]),
-]
-for future_banner in future_banners:
-    g.append(future_banner)
+    future_banners = [
+        make_future_day_banner(x=210, y=18, data=forecast_data[1]),
+        make_future_day_banner(x=210, y=39, data=forecast_data[2]),
+        make_future_day_banner(x=210, y=60, data=forecast_data[3]),
+        make_future_day_banner(x=210, y=81, data=forecast_data[4]),
+        make_future_day_banner(x=210, y=102, data=forecast_data[5]),
+    ]
+    for future_banner in future_banners:
+        g.append(future_banner)
+else:
+    # Display low battery message
+    low_battery_msg = label.Label(
+        terminalio.FONT,
+        text=f"Battery Low: {battery_percent:.1f}%",
+        color=WHITE,
+        background_color=RED,
+    )
+    low_battery_msg.anchor_point = (0.5, 0.5)
+    low_battery_msg.anchored_position = (148, 30)
+    g.append(low_battery_msg)
+
+    power_save_msg = label.Label(
+        terminalio.FONT,
+        text="Power Save Mode",
+        color=BLACK,
+    )
+    power_save_msg.anchor_point = (0.5, 0.5)
+    power_save_msg.anchored_position = (148, 50)
+    g.append(power_save_msg)
+
+    recharge_msg = label.Label(
+        terminalio.FONT,
+        text="Please Recharge",
+        color=BLACK,
+    )
+    recharge_msg.anchor_point = (0.5, 0.5)
+    recharge_msg.anchored_position = (148, 70)
+    g.append(recharge_msg)
 
 # Refresh the display to have it actually show the image
 # NOTE: Do not refresh eInk displays sooner than 180 seconds
 display.refresh()
-time.sleep(30)  # Allow time for the display to refresh
+time.sleep(20)  # Allow time for the display to refresh (reduced from 30s to save power)
 print("refreshed")
+
+# Explicitly disable WiFi to save power during deep sleep (if it was enabled)
+if requests is not None:
+    wifi.radio.enabled = False
 
 local_now = time.localtime(utc_time + local_tz_offset)
 # Target wake time: 6:00 AM local time
