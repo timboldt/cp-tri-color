@@ -41,7 +41,7 @@ def fetch_forecast():
             + required_setting("OPEN_WEATHER_LAT")
             + "&lon="
             + required_setting("OPEN_WEATHER_LON")
-            + "&units=imperial&exclude=minutely,hourly"
+            + "&units=imperial&exclude=minutely,hourly,alerts"
             + "&appid="
             + required_setting("OPEN_WEATHER_KEY")
         )
@@ -109,8 +109,15 @@ def wind_text(wind_speed: float) -> tuple[str, int, int]:
         return "Storm", WHITE, RED
 
 
+def clock_text(t):
+    """Format a struct_time as a 12-hour clock time, e.g. " 6:42 AM"."""
+    hour = t.tm_hour % 12 or 12
+    suffix = "AM" if t.tm_hour < 12 else "PM"
+    return f"{hour:2d}:{t.tm_min:02d} {suffix}"
+
+
 def make_today_banner(city, data, tz_offset, battery_percent):
-    date = time.localtime(data["dt"])
+    date = time.localtime(data["dt"] + tz_offset)
     sunrise = time.localtime(data["sunrise"] + tz_offset)
     sunset = time.localtime(data["sunset"] + tz_offset)
 
@@ -201,7 +208,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     today_sunrise = label.Label(
         terminalio.FONT,
-        text=f"{sunrise.tm_hour:2d}:{sunrise.tm_min:02d} AM",
+        text=clock_text(sunrise),
         color=BLACK,
     )
     today_sunrise.anchor_point = (0, 0.5)
@@ -209,7 +216,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
 
     today_sunset = label.Label(
         terminalio.FONT,
-        text=f"{sunset.tm_hour - 12:2d}:{sunset.tm_min:02d} PM",
+        text=clock_text(sunset),
         color=BLACK,
     )
     today_sunset.anchor_point = (0, 0.5)
@@ -231,11 +238,11 @@ def make_today_banner(city, data, tz_offset, battery_percent):
     return group
 
 
-def make_future_day_banner(x, y, data):
+def make_future_day_banner(x, y, data, tz_offset):
     """Make a single future forecast info banner group."""
     day_of_week = label.Label(
         terminalio.FONT,
-        text=DAYS[time.localtime(data["dt"]).tm_wday][:3].upper(),
+        text=DAYS[time.localtime(data["dt"] + tz_offset).tm_wday][:3].upper(),
         color=BLACK,
     )
     day_of_week.anchor_point = (0, 0.5)
@@ -356,7 +363,9 @@ def show_forecast(display, forecast_data, tz_offset, battery_percent):
     )
     for i in range(5):
         g.append(
-            make_future_day_banner(x=210, y=18 + 21 * i, data=forecast_data[i + 1])
+            make_future_day_banner(
+                x=210, y=18 + 21 * i, data=forecast_data[i + 1], tz_offset=tz_offset
+            )
         )
     show(display, g)
 
