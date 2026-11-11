@@ -21,10 +21,53 @@ WHITE = 0xFFFFFF
 RED = 0xFF0000
 
 
-def get_forecast(requests, url):
-    resp = requests.get(url)
-    json_data = resp.json()
-    return json_data["daily"], json_data["current"]["dt"], json_data["timezone_offset"]
+def required_setting(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing {name} in settings.toml")
+    return value
+
+
+def fetch_forecast():
+    """Connect to WiFi, fetch the forecast, and always turn the radio back off."""
+    try:
+        wifi.radio.connect(
+            required_setting("WIFI_SSID"), required_setting("WIFI_PASSWORD")
+        )
+        print("Connected to:", os.getenv("WIFI_SSID"))
+        url = (
+            "https://api.openweathermap.org/data/3.0/onecall"
+            + "?lat="
+            + required_setting("OPEN_WEATHER_LAT")
+            + "&lon="
+            + required_setting("OPEN_WEATHER_LON")
+            + "&units=imperial&exclude=minutely,hourly"
+            + "&appid="
+            + required_setting("OPEN_WEATHER_KEY")
+        )
+        pool = socketpool.SocketPool(wifi.radio)
+        requests = adafruit_requests.Session(pool, ssl.create_default_context())
+        resp = requests.get(url)
+        try:
+            json_data = resp.json()
+        finally:
+            resp.close()
+        return (
+            json_data["daily"],
+            json_data["current"]["dt"],
+            json_data["timezone_offset"],
+        )
+    finally:
+        wifi.radio.enabled = False
+
+
+def icon_index(data):
+    """Map an OpenWeatherMap icon code to a sprite index (cloud if unknown)."""
+    code = data["weather"][0]["icon"][:2]
+    if code in ICON_MAP:
+        return ICON_MAP.index(code)
+    print("Unknown icon code:", code)
+    return ICON_MAP.index("03")
 
 
 def temperature_text(temp: float) -> tuple[str, int, int]:
@@ -104,7 +147,7 @@ def make_today_banner(city, data, tz_offset, battery_percent):
         tile_width=70,
         tile_height=70,
     )
-    today_icon[0] = ICON_MAP.index(data["weather"][0]["icon"][:2])
+    today_icon[0] = icon_index(data)
 
     (txt, fg, bg) = temperature_text(data["temp"]["morn"])
     today_morn_temp = label.Label(
@@ -208,7 +251,7 @@ def make_future_day_banner(x, y, data):
         tile_width=20,
         tile_height=20,
     )
-    icon[0] = ICON_MAP.index(data["weather"][0]["icon"][:2])
+    icon[0] = icon_index(data)
 
     (txt, fg, bg) = temperature_text(data["temp"]["day"])
     day_temp = label.Label(
@@ -228,130 +271,98 @@ def make_future_day_banner(x, y, data):
     return group
 
 
-# Initialize I2C and battery monitor early to check battery level
-i2c = board.I2C()
-battery_monitor = adafruit_max1704x.MAX17048(i2c)
-battery_percent = battery_monitor.cell_percent
-
-# Only fetch weather data if battery level is sufficient
-# This saves ~20mAh per day when battery is critically low
-if battery_percent > 15:
-    try:
-        wifi.radio.connect(
-            os.getenv("CIRCUITPY_WIFI_SSID"),
-            os.getenv("CIRCUITPY_WIFI_PASSWORD"),
-        )
-        print("Connected to:", os.getenv("CIRCUITPY_WIFI_SSID"))
-    except TypeError:
-        print("Could not find WiFi info. Check your settings.toml file!")
-        raise
-
-    try:
-        url = (
-            "https://api.openweathermap.org/data/3.0/onecall"
-            + "?lat="
-            + os.getenv("OPEN_WEATHER_LAT")  # type: ignore
-            + "&lon="
-            + os.getenv("OPEN_WEATHER_LON")
-            + "&units=imperial&exclude=minutely,hourly"
-            + "&appid="
-            + os.getenv("OPEN_WEATHER_KEY")
-        )
-    except TypeError:
-        print("Could not find OpenWeatherMap token. Check your settings.toml file!")
-        raise
-
-    pool = socketpool.SocketPool(wifi.radio)
-    requests = adafruit_requests.Session(pool, ssl.create_default_context())
-else:
-    print(f"Battery too low ({battery_percent:.1f}%), skipping WiFi to conserve power")
-    requests = None
-
 BACKGROUND_BMP = "/bmps/weather_bg.bmp"
 ICONS_LARGE_FILE = "/bmps/weather_icons_70px.bmp"
 ICONS_SMALL_FILE = "/bmps/weather_icons_20px.bmp"
 ICON_MAP = ("01", "02", "03", "04", "09", "10", "11", "13", "50")
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-
-# Used to ensure the display is free in CircuitPython
-displayio.release_displays()
-
-# Define the pins needed for display use
-# This pinout is for a Feather M4 and may be different for other boards
-spi = board.SPI()  # Uses SCK and MOSI
-epd_cs = board.D9  # type: ignore
-epd_dc = board.D10  # type: ignore
-epd_reset = board.D5
-epd_busy = board.D6  # type: ignore
-
-# Create the displayio connection to the display pins
-display_bus = fourwire.FourWire(
-    spi,
-    command=epd_dc,
-    chip_select=epd_cs,
-    reset=epd_reset,
-    baudrate=1000000,
-)
-time.sleep(1)  # Wait a bit
-
-# Create the display object - the third color is red (0xff0000)
-display = adafruit_il0373.IL0373(
-    display_bus,
-    width=296,
-    height=128,
-    rotation=270,
-    busy_pin=epd_busy,
-    highlight_color=RED,
+MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 )
 
-# Create a display group for our screen objects
-g = displayio.Group()
+CITY = "Pleasanton, CA"
+LOW_BATTERY_PERCENT = 15
+WAKE_HOUR = 6  # Local time to wake for the next update
+ERROR_RETRY_SECONDS = 60 * 60  # Retry an hour after a failed update
+LOW_BATTERY_SLEEP_SECONDS = 24 * 3600
+REFRESH_TIMEOUT_SECONDS = 60
 
-# Display a ruler graphic from the root directory of the CIRCUITPY drive
-bg = open(BACKGROUND_BMP, "rb")
-bg_pic = displayio.OnDiskBitmap(bg)
-bg_tg = displayio.TileGrid(bg_pic, pixel_shader=bg_pic.pixel_shader)
-g.append(bg_tg)
 
-icons_large_bmp, icons_large_pal = adafruit_imageload.load(ICONS_LARGE_FILE)
-icons_small_bmp, icons_small_pal = adafruit_imageload.load(ICONS_SMALL_FILE)
+def init_display():
+    # Used to ensure the display is free in CircuitPython
+    displayio.release_displays()
 
-# Only fetch weather if WiFi was enabled (battery sufficient)
-if requests is not None:
-    forecast_data, utc_time, local_tz_offset = get_forecast(requests, url)
-else:
-    # Use current time for display when skipping WiFi
-    forecast_data = None
-    utc_time = time.time()
-    local_tz_offset = -8 * 3600  # Default to PST
-
-# Place the display group on the screen
-display.root_group = g
-
-# Only display weather if we fetched data; otherwise show low battery message
-if forecast_data is not None:
-    city = "Pleasanton, CA"
-    today_banner = make_today_banner(
-        city=city,
-        data=forecast_data[0],
-        tz_offset=local_tz_offset,
-        battery_percent=battery_percent,
+    # Pins for the tri-color e-ink FeatherWing
+    spi = board.SPI()  # Uses SCK and MOSI
+    display_bus = fourwire.FourWire(
+        spi,
+        command=board.D10,  # type: ignore
+        chip_select=board.D9,  # type: ignore
+        reset=board.D5,
+        baudrate=1000000,
     )
-    g.append(today_banner)
+    return adafruit_il0373.IL0373(
+        display_bus,
+        width=296,
+        height=128,
+        rotation=270,
+        busy_pin=board.D6,  # type: ignore
+        highlight_color=RED,
+    )
 
-    future_banners = [
-        make_future_day_banner(x=210, y=18, data=forecast_data[1]),
-        make_future_day_banner(x=210, y=39, data=forecast_data[2]),
-        make_future_day_banner(x=210, y=60, data=forecast_data[3]),
-        make_future_day_banner(x=210, y=81, data=forecast_data[4]),
-        make_future_day_banner(x=210, y=102, data=forecast_data[5]),
-    ]
-    for future_banner in future_banners:
-        g.append(future_banner)
 
-else:
-    # Display low battery message
+def show(display, group):
+    """Refresh the e-ink display and wait until the panel reports it is done."""
+    display.root_group = group
+    # NOTE: Do not refresh eInk displays sooner than 180 seconds
+    display.refresh()
+    deadline = time.monotonic() + REFRESH_TIMEOUT_SECONDS
+    while display.busy and time.monotonic() < deadline:
+        time.sleep(0.1)
+    print("refreshed")
+
+
+def background_group():
+    g = displayio.Group()
+    bg_pic = displayio.OnDiskBitmap(BACKGROUND_BMP)
+    g.append(displayio.TileGrid(bg_pic, pixel_shader=bg_pic.pixel_shader))
+    return g
+
+
+def show_forecast(display, forecast_data, tz_offset, battery_percent):
+    global icons_large_bmp, icons_large_pal, icons_small_bmp, icons_small_pal
+    icons_large_bmp, icons_large_pal = adafruit_imageload.load(ICONS_LARGE_FILE)
+    icons_small_bmp, icons_small_pal = adafruit_imageload.load(ICONS_SMALL_FILE)
+
+    g = background_group()
+    g.append(
+        make_today_banner(
+            city=CITY,
+            data=forecast_data[0],
+            tz_offset=tz_offset,
+            battery_percent=battery_percent,
+        )
+    )
+    for i in range(5):
+        g.append(
+            make_future_day_banner(x=210, y=18 + 21 * i, data=forecast_data[i + 1])
+        )
+    show(display, g)
+
+
+def show_low_battery(display, battery_percent):
+    g = background_group()
     low_battery_msg = label.Label(
         terminalio.FONT,
         text=f"Battery Low: {battery_percent:.0f}%",
@@ -361,41 +372,49 @@ else:
     low_battery_msg.anchor_point = (0, 0.5)
     low_battery_msg.anchored_position = (5, 30)
     g.append(low_battery_msg)
+    show(display, g)
 
-# Explicitly disable WiFi to save power during display refresh and deep sleep
-# Unconditionally disable to ensure lowest possible power consumption
+
+def seconds_until_wake(utc_time, tz_offset):
+    """Seconds from now until the next WAKE_HOUR:00 local time."""
+    local_now = time.localtime(utc_time + tz_offset)
+    seconds_now = local_now.tm_hour * 3600 + local_now.tm_min * 60 + local_now.tm_sec
+    seconds_target = WAKE_HOUR * 3600
+    if seconds_now < seconds_target:
+        return seconds_target - seconds_now
+    return 24 * 3600 - seconds_now + seconds_target
+
+
+def run(i2c):
+    """Do one update cycle and return how many seconds to sleep afterwards."""
+    battery_percent = adafruit_max1704x.MAX17048(i2c).cell_percent
+
+    if battery_percent <= LOW_BATTERY_PERCENT:
+        # Skip WiFi entirely to conserve power; the clock isn't synced, so
+        # just sleep a full day rather than aiming for a time of day.
+        print(f"Battery too low ({battery_percent:.1f}%), skipping WiFi")
+        show_low_battery(init_display(), battery_percent)
+        return LOW_BATTERY_SLEEP_SECONDS
+
+    # Fetch first so the radio is off before the slower display work starts.
+    forecast_data, utc_time, tz_offset = fetch_forecast()
+    show_forecast(init_display(), forecast_data, tz_offset, battery_percent)
+    return seconds_until_wake(utc_time, tz_offset)
+
+
+try:
+    sleep_seconds = run(board.I2C())
+except Exception as e:  # Any failure must still end in deep sleep
+    print("Update failed:", repr(e))
+    sleep_seconds = ERROR_RETRY_SECONDS
+
+# Belt and braces: make sure the radio is off however we got here.
 wifi.radio.enabled = False
 
-# Refresh the display to have it actually show the image
-# NOTE: Do not refresh eInk displays sooner than 180 seconds
-display.refresh()
-time.sleep(20)  # Allow time for the display to refresh (reduced from 30s to save power)
-print("refreshed")
-
-local_now = time.localtime(utc_time + local_tz_offset)
-# Target wake time: 6:00 AM local time
-target_hour = 6
-target_minute = 0
-target_second = 0
-# Compute seconds since midnight for current and target times
-seconds_now = local_now.tm_hour * 3600 + local_now.tm_min * 60 + local_now.tm_sec
-seconds_target = target_hour * 3600 + target_minute * 60 + target_second
-
-# Compute delay until next 6:00 AM
-if seconds_now < seconds_target:
-    sleep_seconds = seconds_target - seconds_now
-else:
-    # Next day's 6:00 AM
-    sleep_seconds = (24 * 3600 - seconds_now) + seconds_target
-
 print("Sleeping for", sleep_seconds, "seconds")
-
 time_alarm = alarm.time.TimeAlarm(monotonic_time=time.monotonic() + sleep_seconds)  # type: ignore
 
 # Turn off I2C power by setting it to input
 i2c_power = digitalio.DigitalInOut(board.I2C_POWER)  # type: ignore
 i2c_power.switch_to_input()
 alarm.exit_and_deep_sleep_until_alarms(time_alarm)
-
-# Should never reach here, but just in case.
-time.sleep(180)
